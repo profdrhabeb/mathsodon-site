@@ -107,8 +107,8 @@ function closure(gens) {                                  // the subgroup they g
   for (const i of set) for (const g of gens) set.add(INDEX.get(key(mul(T[i], T[g]))));
   return [...set].sort((p, q) => p - q);
 }
-const LABELS = ['as drawn', 'flip ↕', 'flip y=x', 'turn 90° ↻', 'flip ↔', 'turn 180°', 'turn 90° ↺', 'flip y=−x'];
-const PRESETS = [['none', []], ['mirror ↕', [1]], ['mirror ↔', [4]], ['4-way mirror', [1, 4]], ['pinwheel', [6]], ['kaleidoscope', [1, 6]]]
+const LABELS = ['as drawn', 'flip ↕\uFE0E', 'flip y=x', 'turn 90° ↻', 'flip ↔\uFE0E', 'turn 180°', 'turn 90° ↺', 'flip y=−x'];
+const PRESETS = [['none', []], ['mirror ↕\uFE0E', [1]], ['mirror ↔\uFE0E', [4]], ['4-way mirror', [1, 4]], ['pinwheel', [6]], ['kaleidoscope', [1, 6]]]
   .map(([name, gens]) => ({ name, gens, on: closure(gens) }));
 // Parity: an even f is invariant under flip ↔ (row 5), an odd f under turn 180° (row 6), so these copies coincide (0-based rows).
 const PAIRS = { even: [[0, 4], [1, 5], [2, 3], [6, 7]], odd: [[0, 5], [1, 4], [2, 7], [3, 6]] };
@@ -374,7 +374,9 @@ function ui() {
     S.vars = piece.vars; paintSym(); setFormula(piece.src);
   };
   // ---------- export: in the app, Save to Photos and the share sheet via the Capacitor bridge; in a browser, download and Web Share ----------
-  const native = () => window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins : null;   // plugins are injected natively, no bundler needed
+  // Raw bridge call. Capacitor.Plugins is only filled by the @capacitor/core JS runtime, which this bundler-free page never loads;
+  // nativePromise is the primitive that runtime uses, present in native-bridge.js on both platforms.
+  const call = window.Capacitor?.isNativePlatform?.() ? (plugin, method, opts) => window.Capacitor.nativePromise(plugin, method, opts) : null;
   const flash = (b, t, back) => { b.textContent = t; setTimeout(() => { b.textContent = back; }, 1500); };
   const exportCanvas = () => {                            // the square view at 2048 px; Studio adds 4096
     const c = document.createElement('canvas'); c.width = c.height = 2048;
@@ -382,28 +384,28 @@ function ui() {
     return c;
   };
   $('share').onclick = async () => {
-    const url = link(), text = `f(x) = ${S.okSrc ?? S.src}`, P = native();
+    const url = link(), text = `f(x) = ${S.okSrc ?? S.src}`;
     try {
-      if (P) {                                            // picture attached; the text carries the formula and the stamped link
-        const { uri } = await P.Filesystem.writeFile({ path: `${APP}.png`, data: exportCanvas().toDataURL('image/png').split(',')[1], directory: 'CACHE' });
-        await P.Share.share({ text: `${text} ${url}`, files: [uri] });
+      if (call) {                                         // picture attached; the text carries the formula and the stamped link
+        const { uri } = await call('Filesystem', 'writeFile', { path: `${APP}.png`, data: exportCanvas().toDataURL('image/png').split(',')[1], directory: 'CACHE' });
+        await call('Share', 'share', { text: `${text} ${url}`, files: [uri] });
       } else if (navigator.share) await navigator.share({ text, url });
       else { await navigator.clipboard.writeText(`${text} ${url}`); flash($('share'), 'Copied link', 'Share'); }
     } catch {}                                            // includes the user dismissing the sheet
   };
   $('save').onclick = async () => {
-    const c = exportCanvas(), P = native();
-    if (!P) return c.toBlob(b => {                        // browser: download
+    const c = exportCanvas();
+    if (!call) return c.toBlob(b => {                     // browser: download
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(b), download: `${APP}.png` });
       a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
     try {                                                 // iOS: add-only photo permission, no album. Android: the app's own album, no permission prompt
       let albumIdentifier;
       if (window.Capacitor.getPlatform() === 'android') {
-        const find = async () => (await P.Media.getAlbums()).albums.find(a => a.name === APP)?.identifier;
-        albumIdentifier = (await find()) ?? (await P.Media.createAlbum({ name: APP }), await find());
+        const find = async () => (await call('Media', 'getAlbums')).albums.find(a => a.name === APP)?.identifier;
+        albumIdentifier = (await find()) ?? (await call('Media', 'createAlbum', { name: APP }), await find());
       }
-      await P.Media.savePhoto({ path: c.toDataURL('image/png'), albumIdentifier, fileName: `${APP}-${Date.now()}` });
+      await call('Media', 'savePhoto', { path: c.toDataURL('image/png'), albumIdentifier, fileName: `${APP}-${Date.now()}` });
       flash($('save'), 'Saved', 'Save PNG');
     } catch { flash($('save'), 'Not saved', 'Save PNG'); }
   };
