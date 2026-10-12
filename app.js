@@ -1,5 +1,6 @@
 // mathart — one formula, its square-symmetry copies, on a canvas. Plan v0.3, milestone 2b.
 const APP = 'mathart';                                    // ponytail: rename once the store name is checked
+const SITE = 'https://profdrhabeb.github.io/mathart/';   // the web build (GitHub Pages, milestone 4); stamped links from the apps point here
 
 // ---------- formula → closure (no eval, no new Function) ----------
 const CONST = new Map([['pi', Math.PI], ['e', Math.E]]);
@@ -234,7 +235,9 @@ function ui() {
     hashTimer = setTimeout(() => { try { history.replaceState(null, '', location.pathname + encode()); } catch {} }, 300);   // drops ?s=1 so reloads aren't counted as arrivals
   }
   addEventListener('hashchange', () => location.reload());   // a pasted link into an open tab; replaceState never fires this
-  const link = () => location.href.split(/[?#]/)[0] + '?s=1' + encode(S.okSrc ?? S.src);   // stamped: ?s=1 is countable, the hash is not
+  const NATIVE = !!window.Capacitor?.isNativePlatform?.();  // inside the iOS/Android app, as opposed to a browser
+  // Stamped link: ?s=1 is countable, the hash is not. In the app location.href is the webview's own origin, so use the public site there.
+  const link = () => (NATIVE ? SITE : location.href.split(/[?#]/)[0]) + '?s=1' + encode(S.okSrc ?? S.src);
 
   const $ = id => document.getElementById(id);
   const dark = () => document.documentElement.dataset.theme === 'dark';
@@ -376,7 +379,7 @@ function ui() {
   // ---------- export: in the app, Save to Photos and the share sheet via the Capacitor bridge; in a browser, download and Web Share ----------
   // Raw bridge call. Capacitor.Plugins is only filled by the @capacitor/core JS runtime, which this bundler-free page never loads;
   // nativePromise is the primitive that runtime uses, present in native-bridge.js on both platforms.
-  const call = window.Capacitor?.isNativePlatform?.() ? (plugin, method, opts) => window.Capacitor.nativePromise(plugin, method, opts) : null;
+  const call = NATIVE ? (plugin, method, opts) => window.Capacitor.nativePromise(plugin, method, opts) : null;
   const flash = (b, t, back) => { b.textContent = t; setTimeout(() => { b.textContent = back; }, 1500); };
   const exportCanvas = () => {                            // the square view at 2048 px; Studio adds 4096
     const c = document.createElement('canvas'); c.width = c.height = 2048;
