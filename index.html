@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>mathart</title>
+<script>
+  // set theme before first paint: stored choice, else system
+  try { document.documentElement.dataset.theme = localStorage['mathart.theme'] || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch { document.documentElement.dataset.theme = 'dark'; }
+</script>
+<style>
+  :root { --bg:#fafafa; --fg:#15151a; --muted:#7a7a85; --panel:#eeeef2; color-scheme: light; }
+  :root[data-theme=dark] { --bg:#0b0b10; --fg:#ececf1; --muted:#8a8a96; --panel:#15151c; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; height:100dvh; display:flex; flex-direction:column; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, -apple-system, sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 16px; padding-top:calc(8px + env(safe-area-inset-top)); }
+  h1 { font-size:17px; font-weight:600; margin:0 auto 0 0; letter-spacing:.02em; }
+  button { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--muted); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
+  button:active { opacity:.7; }
+  canvas { flex:1; min-height:0; width:100%; display:block; }
+  #panel { background:var(--panel); padding:12px 16px calc(12px + env(safe-area-inset-bottom)); max-height:46dvh; overflow:auto; display:grid; gap:10px; }
+  #formula { width:100%; font:17px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; padding:8px 10px; border-radius:8px; border:1px solid var(--muted); background:var(--bg); color:var(--fg); }
+  #err { color:#d33; font-size:13px; margin-top:-6px; }
+  #err:empty { display:none; }
+  #parity { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin-top:-4px; }
+  #parity[hidden] { display:none; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { padding:3px 10px; border:1.5px solid var(--c, var(--muted)); font-size:13px; user-select:none; background:none; }
+  .chip:focus-visible { outline:2px solid var(--fg); outline-offset:2px; }
+  .chip[aria-pressed=true] { background:var(--c, var(--fg)); border-color:var(--c, var(--fg)); color:var(--bg); font-weight:600; }
+  .chip:disabled { cursor:default; }
+  .chip.dim { opacity:.35; }
+  .chip.gen { box-shadow:0 0 0 2px var(--panel), 0 0 0 4px var(--c); }   /* a move the user added; the rest follow from it */
+  details { font-size:13px; color:var(--muted); }
+  summary { cursor:pointer; margin-bottom:6px; }
+  .row { display:grid; grid-template-columns:6em 1fr; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
+  .row output { font-variant-numeric: tabular-nums; color:var(--fg); white-space:nowrap; }   /* a wrapping value would resize the panel, and so the canvas, mid-drag */
+  input[type=range] { width:100%; margin:0; }
+  input[type=checkbox] { margin:0 6px 0 0; vertical-align:middle; }
+  select { font:inherit; font-size:16px; color:var(--fg); background:var(--bg); border:1px solid var(--muted); border-radius:8px; padding:4px 8px; }   /* under 16px, iOS zooms the page on focus */
+</style>
+</head>
+<body>
+<header>
+  <h1>mathart</h1>
+  <button id="rand">Randomize</button>
+  <button id="share">Share</button>
+  <button id="save">Save PNG</button>
+  <button id="theme" aria-label="Toggle light/dark">◐</button>
+</header>
+<canvas id="c" aria-label="Function art"></canvas>
+<div id="panel">
+  <input id="formula" type="text" maxlength="200" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" aria-label="Formula f(x)">
+  <div id="err" role="alert"></div>
+  <div id="parity" hidden><span id="ptext"></span><button id="fix" class="chip">Fix: shift x by c</button></div>
+  <div id="starters" class="chips"></div>
+  <div id="consts"></div>
+  <div id="presets" class="chips" role="group" aria-label="Symmetry"></div>
+  <details><summary>Advanced: build a symmetry from single moves</summary><div id="sym" class="chips"></div></details>
+  <label class="row"><span>Palette</span><select id="palette"></select></label>
+  <label class="row"><span>Line</span><input id="lw" type="range" min="0.5" max="6" step="0.1"></label>
+  <label class="row"><span>Zoom</span><input id="R" type="range" min="0.5" max="10" step="0.1"></label>
+  <label class="row"><span>Caption</span><span><input id="cap" type="checkbox">formula and app name on saved PNGs</span></label>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
