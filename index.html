@@ -36,6 +36,7 @@
   .row { display:grid; grid-template-columns:6em 1fr; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
   .row output { font-variant-numeric: tabular-nums; color:var(--fg); white-space:nowrap; }   /* a wrapping value would resize the panel, and so the canvas, mid-drag */
   input[type=range] { width:100%; margin:0; }
+  #R { direction:rtl; }   /* min (zoomed in) sits on the right */
   input[type=checkbox] { margin:0 6px 0 0; vertical-align:middle; }
   select { font:inherit; font-size:16px; color:var(--fg); background:var(--bg); border:1px solid var(--muted); border-radius:8px; padding:4px 8px; }   /* under 16px, iOS zooms the page on focus */
 </style>

@@ -357,7 +357,7 @@ function ui() {
   $('palette').replaceChildren(...Object.keys(PALETTES).map(k => new Option(k, k, false, k === S.palette)));
   $('palette').onchange = e => { S.palette = e.target.value; save(); paintSym(); render(); };
   $('lw').value = S.lw; $('lw').oninput = e => { S.lw = +e.target.value; save(); render(); };
-  $('R').value = 10.5 - S.R; $('R').oninput = e => { S.R = +(10.5 - e.target.value).toFixed(1); save(); render(); };   // right = zoom in
+  $('R').value = S.R; $('R').oninput = e => { S.R = +e.target.value; save(); render(); };   // the range is rtl in CSS, so right = zoom in
   $('cap').checked = S.cap; $('cap').onchange = e => { S.cap = e.target.checked; save(); };
   const setTheme = t => { document.documentElement.dataset.theme = t; paintSym(); render(); };
   $('theme').onclick = () => {
@@ -372,7 +372,7 @@ function ui() {
   $('rand').onclick = () => {
     const piece = randomPiece(), keys = Object.keys(PALETTES);
     S.palette = $('palette').value = keys[Math.random() * keys.length | 0];
-    S.R = +(1.2 + Math.random() * 2.3).toFixed(1); $('R').value = 10.5 - S.R;
+    S.R = +(1.2 + Math.random() * 2.3).toFixed(1); $('R').value = S.R;
     if (Math.random() < 1 / 3) { const p = PRESETS[1 + (Math.random() * (PRESETS.length - 1) | 0)]; S.gens = p.gens; S.on = p.on; }
     S.vars = piece.vars; paintSym(); setFormula(piece.src);
   };
