@@ -15,6 +15,8 @@
   body { margin:0; height:100dvh; display:flex; flex-direction:column; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, -apple-system, sans-serif; }
   header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 16px; padding-top:calc(8px + env(safe-area-inset-top)); }
   h1 { font-size:17px; font-weight:600; margin:0 auto 0 0; letter-spacing:.02em; }
+  .actions { display:flex; gap:8px; }
+  @media (max-width: 480px) { .actions { order:1; flex-basis:100%; } }   /* phones: title + theme on line 1, the three actions on line 2 */
   button { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--muted); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
   button:active { opacity:.7; }
   canvas { flex:1; min-height:0; width:100%; display:block; }
@@ -44,9 +46,11 @@
 <body>
 <header>
   <h1>Mathsodon</h1>
-  <button id="rand">Randomize</button>
-  <button id="share">Share</button>
-  <button id="save">Save PNG</button>
+  <div class="actions">
+    <button id="rand">Randomize</button>
+    <button id="share">Share</button>
+    <button id="save">Save PNG</button>
+  </div>
   <button id="theme" aria-label="Toggle light/dark">◐</button>
 </header>
 <canvas id="c" aria-label="Function art"></canvas>
