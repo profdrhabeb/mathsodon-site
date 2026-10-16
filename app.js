@@ -1,5 +1,5 @@
-// mathart — one formula, its square-symmetry copies, on a canvas. Plan v0.3, milestone 2b.
-const APP = 'mathart';                                    // ponytail: rename once the store name is checked
+// Mathsodon — one formula, its square-symmetry copies, on a canvas. Plan v0.3, milestone 2b.
+const APP = 'Mathsodon';
 const SITE = 'https://profdrhabeb.github.io/mathart/';   // the web build (GitHub Pages, milestone 4); stamped links from the apps point here
 
 // ---------- formula → closure (no eval, no new Function) ----------
