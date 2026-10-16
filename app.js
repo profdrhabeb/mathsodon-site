@@ -1,6 +1,6 @@
 // Mathsodon — one formula, its square-symmetry copies, on a canvas. Plan v0.3, milestone 2b.
 const APP = 'Mathsodon';
-const SITE = 'https://profdrhabeb.github.io/mathart/';   // the web build (GitHub Pages, milestone 4); stamped links from the apps point here
+const SITE = 'https://mathsodon.com/';   // the web build (GitHub Pages from the public mathsodon-site repo); stamped links from the apps point here
 
 // ---------- formula → closure (no eval, no new Function) ----------
 const CONST = new Map([['pi', Math.PI], ['e', Math.E]]);
