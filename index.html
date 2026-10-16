@@ -8,6 +8,15 @@
   // set theme before first paint: stored choice, else system
   try { document.documentElement.dataset.theme = localStorage['mathart.theme'] || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch { document.documentElement.dataset.theme = 'dark'; }
 </script>
+<script>
+  // GoatCounter: cookieless visit counter, website only (never inside the app). A ?s=1 arrival from a
+  // shared link is counted as its own path, read here before app.js strips it from the URL.
+  if (!window.Capacitor?.isNativePlatform?.()) {
+    window.goatcounter = { path: location.pathname + (/[?&]s=1\b/.test(location.search) ? '?s=1' : '') };
+    const g = document.createElement('script'); g.async = true; g.src = '//gc.zgo.at/count.js';
+    g.dataset.goatcounter = 'https://mathsodon.goatcounter.com/count'; document.head.appendChild(g);
+  }
+</script>
 <style>
   :root { --bg:#fafafa; --fg:#15151a; --muted:#7a7a85; --panel:#eeeef2; color-scheme: light; }
   :root[data-theme=dark] { --bg:#0b0b10; --fg:#ececf1; --muted:#8a8a96; --panel:#15151c; color-scheme: dark; }
