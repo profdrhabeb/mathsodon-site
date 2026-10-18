@@ -7,6 +7,9 @@ const CONST = new Map([['pi', Math.PI], ['e', Math.E]]);
 const FN = new Map('sin cos tan asin acos atan sinh cosh tanh exp sqrt abs floor ceil round sign min max'
   .split(' ').map(n => [n, Math[n]]));
 FN.set('ln', Math.log); FN.set('log', Math.log10);
+FN.set('cbrt', Math.cbrt); FN.set('sgn', Math.sign);
+for (const n of ['sin', 'cos', 'tan']) FN.set('arc' + n, Math['a' + n]);
+FN.set('sec', t => 1 / Math.cos(t)); FN.set('csc', t => 1 / Math.sin(t)); FN.set('cot', t => 1 / Math.tan(t));
 
 // Names are matched longest first, else one letter, so kx = k·x and xsin(x) = x·sin(x) (the Desmos rule).
 const NAMES = [...FN.keys(), ...CONST.keys()].sort((a, b) => b.length - a.length).join('|');
@@ -18,6 +21,7 @@ function tokenize(src) {
     if (!m[4]) out.push(m[1] != null ? { n: +m[1] } : m[2] != null ? { id: m[2], i0: m.index, i1: end } : { op: m[3] });
   }
   if (end < src.length) throw Error(`Unexpected "${src[end]}"`);
+  if (out.some((t, i) => t.n != null && out[i - 1]?.n != null)) throw Error('Two numbers in a row');   // 2.5.3, 2 3: a drag would merge them
   return out;
 }
 
@@ -29,7 +33,7 @@ const bin = (g, l, r) => (x, a, v) => g(l(x, a, v), r(x, a, v));
 function parse(toks, consts, vars) {
   let p = 0;
   const peek = () => toks[p], next = () => toks[p++];
-  const expect = op => { const t = next(); if (!t || t.op !== op) throw Error(`Expected "${op}"`); };
+  const expect = op => { const t = next(); if (!t || t.op !== op) throw Error(`Expected "${op}" ${t ? `before "${t.op ?? t.id ?? t.n}"` : 'at end'}`); };
   function prim() {
     const t = next();
     if (!t) throw Error('Unexpected end');
@@ -82,8 +86,9 @@ function compile(src) {
   return { f, consts, parts: src.split(/\d*\.?\d+/), varNames: [...vars], usesX: toks.some(t => t.id === 'x') };
 }
 const fmt = v => String(+v.toFixed(3));
+const num = v => v.toFixed(12).replace(/\.?0+$/, '');   // formula text keeps full precision; toPrecision would write 1e-7, read back as 1·e−7
 // ponytail: a constant dragged negative is written back as (−v) so the text means what is drawn; re-parsing it yields an unsigned slider again
-const join = (parts, consts) => parts.map((p, j) => j < consts.length ? p + (consts[j] < 0 ? `(${fmt(consts[j])})` : fmt(consts[j])) : p).join('');
+const join = (parts, consts) => parts.map((p, j) => j < consts.length ? p + (consts[j] < 0 ? `(${num(consts[j])})` : num(consts[j])) : p).join('');
 function shifted(src, name) {                             // f(x) → f(x − name): the one-tap parity fix
   let out = '', last = 0;
   for (const t of tokenize(src)) if (t.id === 'x') { out += src.slice(last, t.i0) + `(x-${name})`; last = t.i1; }
@@ -122,6 +127,7 @@ function sample(f, consts, vars, R, N) {                  // f on a grid symmetr
   }
   return { xs, ys };
 }
+const between = (m, p, q) => m >= Math.min(p, q) && m <= Math.max(p, q);   // false for NaN
 // 'even' | 'odd' | null. Matching is judged across the curve at pixel scale (tol in y-units, default ≈ 1 px),
 // so near-parity that still looks doubled on screen counts as parity. A larger tol asks for a clearly separated fix.
 function parityOf(ys, R, tol = R / 300) {
@@ -131,7 +137,7 @@ function parityOf(ys, R, tol = R / 300) {
     const a = ys[i], b = ys[N - i], na = a !== a, nb = b !== b;
     if (na || nb) { if (na !== nb) return null; continue; }
     n++;
-    const slope = i > 0 ? (ys[i + 1] - ys[i - 1]) / (2 * dx) : 0, scale = Math.hypot(1, slope || 0);
+    const slope = i > 0 ? (ys[i + 1] - ys[i - 1]) / (2 * dx) : (ys[1] - ys[0]) / dx, scale = Math.hypot(1, slope || 0);
     if (Math.abs(a - b) / scale > tol) even = false;
     if (Math.abs(a + b) / scale > tol) odd = false;
     if (!even && !odd) return null;
@@ -152,8 +158,9 @@ const STARTERS = ['sin(3x)+cos(5x)/2', 'cos(7x^2+2x)/3', 'x^2/4-x', 'sin(3x)*cos
 const G = ['sin', 'cos', 'tanh', 'atan'];                 // bounded only: a pole's branches become lines across the canvas under rotation
 function randomPiece(rnd = Math.random) {                 // {src, vars} with clearly separated copies; both branches carry a phase
   const pick = a => a[rnd() * a.length | 0], ri = (lo, hi) => lo + (rnd() * (hi - lo + 1) | 0), rf = (lo, hi) => +(lo + rnd() * (hi - lo)).toFixed(2);
-  const starter = rnd() < 0.4 ? pick(STARTERS) : null;
-  const g1 = pick(G), g2 = pick(G), k1 = ri(1, 9), k2 = ri(1, 9), a = rf(0.3, 1.5), b = rf(0.3, 1.5), op = pick(['+', '*']);
+  const starter = rnd() < 0.4 ? pick(STARTERS.filter(s => s !== 'x^2/4-x')) : null;   // shifted, its vertex leaves the view
+  const op = pick(['+', '*']), lo = op === '*' ? 0.8 : 0.3;   // a product of two small amplitudes draws near-flat
+  const g1 = pick(G), g2 = pick(G), k1 = ri(1, 9), k2 = ri(1, 9), a = rf(lo, 1.5), b = rf(lo, 1.5);
   let out;
   for (let i = 0; i < 12; i++) {                          // re-roll the phase while the parity check fires
     const p = rf(0.3, 2.8);
@@ -171,6 +178,7 @@ function selfTest() {
   let c = compile('1/3*cos(7x^2)');
   ok(near(c.f(0, c.consts, {}), 1 / 3) && c.consts.length === 4 && c.usesX, 'basic + implicit mult');
   ok(join(c.parts, [2, 3, 7, 2]) === '2/3*cos(7x^2)' && join(['', '^x'], [-2]) === '(-2)^x', 'slider rewrite');
+  ok(join(['sin(', 'x)'], [3.14159]) === 'sin(3.14159x)' && join(['', 'x'], [1e-7]) === '0.0000001x', 'rewrite keeps every constant exact');
   ok(near(compile('-x^2').f(3, [2], {}), -9), 'unary minus binds looser than ^');
   ok(near(compile('2^-x').f(1, [2], {}), 0.5), 'unary minus on exponent');
   ok(near(compile('1/2x').f(4, [1, 2], {}), 2), 'implicit mult is left-to-right');
@@ -183,8 +191,11 @@ function selfTest() {
   ok(eq(c.varNames, ['a', 'b', 'c']) && near(c.f(2, [2], { a: 1, b: 2, c: 3 }), 11), 'kx-style letters split off');
   ok(near(compile('xsin(x)').f(2, [], {}), 2 * Math.sin(2)) && near(compile('xx').f(3, [], {}), 9) && near(compile('x2').f(3, [2], {}), 6), 'names split longest-first');
   ok(near(compile('e^x').f(1, [], {}), Math.E) && compile('e^x').varNames.length === 0 && !compile('1').usesX, 'e is Euler, not a slider');
-  for (const bad of ['x$', 'cos x', '(x', 'x+', 'window.x', 'a_1', 'sin(x,5)', 'log(x,2)'])
-    { let threw = false; try { compile(bad); } catch { threw = true; } ok(threw, 'rejects ' + bad); }
+  ok(compile('arcsin(x)+sec(x)+csc(x)+cot(x)+sgn(x)+cbrt(x)').varNames.length === 0 && near(compile('arctan(x)').f(1, [], {}), Math.PI / 4), 'Desmos names are functions, not letter products');
+  const err = src => { try { compile(src); } catch (e) { return e.message; } };
+  for (const bad of ['x$', 'cos x', '(x', 'x+', 'window.x', 'a_1', 'sin(x,5)', 'log(x,2)']) ok(err(bad), 'rejects ' + bad);
+  ok(err('2.5.3') === 'Two numbers in a row' && err('2 3') === 'Two numbers in a row', 'two numbers in a row are rejected');
+  ok(err('cos x') === 'Expected "(" before "x"' && err('(x') === 'Expected ")" at end', 'errors name the token found');
   ok(shifted('sin(3x)*cos(5x)', 'c') === 'sin(3(x-c))*cos(5(x-c))' && shifted('kx+exp(-x^2)', 'c') === 'k(x-c)+exp(-(x-c)^2)', 'shift rewrite');
   ok(eq(T, [[1, 0, 0, 1], [1, 0, 0, -1], [0, 1, 1, 0], [0, 1, -1, 0], [-1, 0, 0, 1], [-1, 0, 0, -1], [0, -1, 1, 0], [0, -1, -1, 0]]), 'D4 in plan row order');
   ok(dihedral(6).length === 12 && dihedral(6).every(([a, b, c2, d]) => near(Math.abs(a * d - b * c2), 1)), 'D6: 12 isometries');
@@ -192,14 +203,18 @@ function selfTest() {
   ok(closure([1, 2, 3]).length === 8, 'rows 1–4 are not a subgroup');
   const par = (src, v = { c: 0.7 }, tol) => { const k = compile(src); return parityOf(sample(k.f, k.consts, v, 2, 400).ys, 2, tol); };
   ok(par('x^2') === 'even' && par('x^3-x') === 'odd' && par('tan(2x)/8') === 'odd' && par('sin(1/x)/2') === 'odd', 'parity detection');
+  ok(par('(x-0.002)^2') === 'even', 'the edge sample is judged on its slope too: steep and within a pixel is even');
   ok(par('sqrt(-1-x^2)') === null && par('1') === 'even', 'no finite samples: no verdict; a constant is even');
   ok(STARTERS.slice(0, 5).every(s => par(s) === null) && STARTERS.slice(5).every(s => par(s) !== null), 'starters: 5 free, 4 with parity');
   ok(par('sin(3(x-c))') === null, 'shift breaks parity');
   ok(par('sin(9(x-c))', { c: 0.7 }, 0.1) !== null && par('sin(9(x-c))', { c: 1.1 }, 0.1) === null, 'near-parity (9·0.7 ≈ 2π) fails the strict check');
+  const lifts = (f, x0, x1) => !between(f((x0 + x1) / 2), f(x0), f(x1));   // draw()'s pen test on one sample step
+  ok(lifts(Math.tan, 1.56, 1.572) && !lifts(x => x ** 3, 1, 2), 'pen lifts at an off-centre pole, not on a steep curve');
   let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   for (let i = 0; i < 25; i++) {
-    const p = randomPiece(rnd), k = compile(p.src);
+    const p = randomPiece(rnd), k = compile(p.src), m = p.src.match(/^([\d.]+)\w+\([^)]*\)\*([\d.]+)/);   // m: a·g1(…)*b·g2(…)
     ok(parityOf(sample(k.f, k.consts, p.vars, 2, 400).ys, 2, 0.1) === null, 'random piece has no near-parity: ' + p.src);
+    ok(!(m && Math.min(m[1], m[2]) < 0.8) && !p.src.includes('^2/4'), 'random piece is no near-flat product and no off-view starter: ' + p.src);
   }
   return 'selftest ok';
 }
@@ -213,9 +228,9 @@ function ui() {
   function decode(h) {                                    // the hash is untrusted input: whitelist and clamp everything
     const q = new URLSearchParams(h.replace(/\+/g, '%2B')), o = {};   // keep a hand-written '+' as plus, not space
     const num = (k, lo, hi) => { const v = +q.get(k); return q.has(k) && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined; };
-    if (q.has('f')) o.src = q.get('f').slice(0, 200);
+    if (q.has('f')) o.src = q.get('f').slice(0, 2000);   // the input caps typing at 200; Fix and negative drags grow the text
     if (q.has('g')) o.gens = [...new Set(q.get('g').match(/[1-7]/g) || [])].map(Number);
-    if (Object.hasOwn(PALETTES, q.get('p'))) o.palette = q.get('p');
+    if (Object.prototype.hasOwnProperty.call(PALETTES, q.get('p'))) o.palette = q.get('p');   // not Object.hasOwn: iOS 15.0–15.3 lacks it
     const lw = num('lw', 0.5, 6), R = num('R', 0.5, 10);
     if (lw != null) o.lw = lw; if (R != null) o.R = R;
     if (q.has('cap')) o.cap = q.get('cap') === '1';
@@ -223,7 +238,7 @@ function ui() {
     for (const [k, v] of q) if (/^v\.[a-zA-Z]$/.test(k) && Number.isFinite(+v)) o.vars[k.slice(2)] = Math.min(5, Math.max(-5, +v));
     return o;
   }
-  const encode = (src = S.src) => '#' + [`f=${encodeURIComponent(src)}`, `g=${S.gens.join('')}`, `p=${S.palette}`, `lw=${S.lw}`, `R=${S.R}`,
+  const encode = (src = S.okSrc ?? DEFAULTS.src) => '#' + [`f=${encodeURIComponent(src)}`, `g=${S.gens.join('')}`, `p=${S.palette}`, `lw=${S.lw}`, `R=${S.R}`,
     `cap=${S.cap ? 1 : 0}`, ...Object.entries(S.vars).map(([k, v]) => `v.${k}=${fmt(v)}`)].join('&');
   let stored = ''; try { stored = localStorage.mathart || ''; } catch {}
   const S = { ...DEFAULTS, ...decode(stored.slice(1)), ...(location.hash.length > 1 ? decode(location.hash.slice(1)) : {}) };
@@ -263,9 +278,9 @@ function ui() {
       for (let i = 0, prev = NaN; i <= N; i++) {
         const x = xs[i], y = ys[i];
         if (y !== y) pen = false;
-        else if (pen && Math.abs(y - prev) > 2 * R) {     // a jump taller than the view: lift only if f blows up in between (a pole), not for a steep curve
+        else if (pen && Math.abs(y - prev) > 2 * R) {     // a jump taller than the view: lift only at a pole, where f(mid) leaves the range of the two samples; a steep curve stays inside it
           const ym = f((xs[i - 1] + x) / 2, consts, vars);   // ponytail: one midpoint; shallow poles at large zoom-out still streak
-          if (!(Math.abs(ym) < Math.max(Math.abs(y), Math.abs(prev)))) pen = false;
+          if (!between(ym, y, prev)) pen = false;
         }
         prev = y;
         if (y !== y) continue;
@@ -277,7 +292,7 @@ function ui() {
     ctx.restore();
     if (caption) {
       const text = `f(x) = ${S.okSrc} · ${APP}`;
-      let size = Math.round(W / 56);
+      let size = Math.round(W / 36);
       ctx.fillStyle = css('--muted'); ctx.textBaseline = 'bottom';
       do { ctx.font = `${size}px system-ui, -apple-system, sans-serif`; } while (ctx.measureText(text).width > W * 0.95 && --size > 8);
       ctx.fillText(text, W / 40, H - W / 40);
@@ -313,6 +328,7 @@ function ui() {
       S.vars = Object.fromEntries(c.varNames.map(n => [n, S.vars[n] ?? 1]));
       $('err').textContent = ''; buildSliders();
     } catch (e) { $('err').textContent = e.message; }
+    $('save').disabled = $('share').disabled = !S.f;     // nothing compiled yet: nothing to save or share
     if ($('formula').value !== src) $('formula').value = src;
     save(); render();
   }
@@ -326,7 +342,10 @@ function ui() {
     $('consts').replaceChildren(
       ...S.consts.map((v, i) => {                         // ponytail: range ±2|v|; add editable bounds if asked
         const span = Math.max(Math.abs(v), 0.5) * 2;
-        return slider(fmt, `constant ${i + 1}`, -span, span, span / 200, v, w => { S.consts[i] = w; $('formula').value = S.src = S.okSrc = join(S.parts, S.consts); });
+        return slider(fmt, `constant ${i + 1}`, -span, span, Math.abs(v) < 0.5 ? 0.001 : span / 200, v, w => {
+          S.consts[i] = w; $('formula').value = S.src = S.okSrc = join(S.parts, S.consts);
+          $('err').textContent = '';                      // the rewrite of the last good formula is valid, even if a typo was showing
+        });
       }),
       ...S.varNames.map(n => slider(w => `${n} = ${fmt(w)}`, n, -5, 5, 0.01, S.vars[n], w => { S.vars[n] = w; })));   // letters: named sliders, nothing to rewrite
   }
@@ -360,12 +379,15 @@ function ui() {
   $('R').value = S.R; $('R').oninput = e => { S.R = +e.target.value; save(); render(); };   // the range is rtl in CSS, so right = zoom in
   $('cap').checked = S.cap; $('cap').onchange = e => { S.cap = e.target.checked; save(); };
   const setTheme = t => { document.documentElement.dataset.theme = t; paintSym(); render(); };
+  const sysDark = matchMedia('(prefers-color-scheme: dark)');
   $('theme').onclick = () => {
     const t = dark() ? 'light' : 'dark';
-    try { localStorage['mathart.theme'] = t; } catch {}  // a manual choice sticks; otherwise the page follows the system
+    try {                                                 // a manual choice sticks; picking the system's own theme unpins it
+      if (t === (sysDark.matches ? 'dark' : 'light')) localStorage.removeItem('mathart.theme'); else localStorage['mathart.theme'] = t;
+    } catch {}
     setTheme(t);
   };
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  sysDark.addEventListener('change', e => {
     let pinned = false; try { pinned = !!localStorage['mathart.theme']; } catch {}
     if (!pinned) setTheme(e.matches ? 'dark' : 'light');
   });
@@ -380,7 +402,7 @@ function ui() {
   // Raw bridge call. Capacitor.Plugins is only filled by the @capacitor/core JS runtime, which this bundler-free page never loads;
   // nativePromise is the primitive that runtime uses, present in native-bridge.js on both platforms.
   const call = NATIVE ? (plugin, method, opts) => window.Capacitor.nativePromise(plugin, method, opts) : null;
-  const flash = (b, t, back) => { b.textContent = t; setTimeout(() => { b.textContent = back; }, 1500); };
+  const flash = (b, t, back, ms = 1500) => { b.textContent = t; setTimeout(() => { b.textContent = back; }, ms); };
   const exportCanvas = () => {                            // the square view at 2048 px; Studio adds 4096
     const c = document.createElement('canvas'); c.width = c.height = 2048;
     draw(c.getContext('2d'), 2048, 2048, S.lw * 2048 / Math.min(canvas.clientWidth, canvas.clientHeight), S.cap);
@@ -391,8 +413,8 @@ function ui() {
     try {
       if (call) {                                         // picture attached; the text carries the formula and the stamped link
         const { uri } = await call('Filesystem', 'writeFile', { path: `${APP}.png`, data: exportCanvas().toDataURL('image/png').split(',')[1], directory: 'CACHE' });
-        await call('Share', 'share', { text: `${text} ${url}`, files: [uri] });
-      } else if (navigator.share) await navigator.share({ text, url });
+        await call('Share', 'share', { title: APP, text: `${text} ${url}`, files: [uri] });   // title: the Mail subject
+      } else if (navigator.share) await navigator.share({ title: APP, text, url });
       else { await navigator.clipboard.writeText(`${text} ${url}`); flash($('share'), 'Copied link', 'Share'); }
     } catch {}                                            // includes the user dismissing the sheet
   };
@@ -410,7 +432,9 @@ function ui() {
       }
       await call('Media', 'savePhoto', { path: c.toDataURL('image/png'), albumIdentifier, fileName: `${APP}-${Date.now()}` });
       flash($('save'), 'Saved', 'Save PNG');
-    } catch { flash($('save'), 'Not saved', 'Save PNG'); }
+    } catch (e) {                                         // denied once, iOS never asks again
+      if (e?.code === 'accessDenied') flash($('save'), 'Allow in Settings', 'Save PNG', 4000); else flash($('save'), 'Not saved', 'Save PNG');
+    }
   };
 
   paintSym(); setFormula(S.src);
