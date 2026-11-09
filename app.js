@@ -255,6 +255,7 @@ function ui() {
   const link = () => (NATIVE ? SITE : location.href.split(/[?#]/)[0]) + '?s=1' + encode(S.okSrc ?? S.src);
 
   const $ = id => document.getElementById(id);
+  if (NATIVE) $('store').hidden = true;                 // the App Store link is for the website, not the app
   const dark = () => document.documentElement.dataset.theme === 'dark';
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const colors = () => PALETTES[S.palette].map(([h, s]) =>
