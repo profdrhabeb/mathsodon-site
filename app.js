@@ -145,6 +145,17 @@ function parityOf(ys, R, tol = R / 300) {
   return n ? (even ? 'even' : odd ? 'odd' : null) : null;   // no finite samples at all: nothing to say
 }
 
+// One animation frame: every playing slider at centre + amplitude·sin(2πt). Keys are constant indices or letter names.
+// A number swings by `sw` of its size (of 0.5 when smaller), so sw = 1 stays inside its slider; a letter by sw·2.5.
+function sweep(consts, vars, keys, sw, t) {
+  const w = Math.sin(2 * Math.PI * t); consts = consts.slice(); vars = { ...vars };
+  for (const k of keys) {
+    if (typeof k === 'number') consts[k] += sw * Math.max(Math.abs(consts[k]), 0.5) * w;
+    else vars[k] += sw * 2.5 * w;
+  }
+  return { consts, vars };
+}
+
 const PALETTES = {
   Spectrum: [0, 45, 90, 135, 180, 225, 270, 315].map(h => [h, 85]),
   Ocean: [165, 180, 195, 210, 225, 240, 255, 270].map(h => [h, 70]),
@@ -210,6 +221,10 @@ function selfTest() {
   ok(par('sin(9(x-c))', { c: 0.7 }, 0.1) !== null && par('sin(9(x-c))', { c: 1.1 }, 0.1) === null, 'near-parity (9·0.7 ≈ 2π) fails the strict check');
   const lifts = (f, x0, x1) => !between(f((x0 + x1) / 2), f(x0), f(x1));   // draw()'s pen test on one sample step
   ok(lifts(Math.tan, 1.56, 1.572) && !lifts(x => x ** 3, 1, 2), 'pen lifts at an off-centre pole, not on a steep curve');
+  const sc = [2, 6], sv = { k: 1 }, q = sweep(sc, sv, [1, 'k'], 0.1, 0.25), at = i => sweep(sc, sv, [1], 0.1, i / 74).consts[1];
+  ok(near(q.consts[1], 6.6) && q.consts[0] === 2 && near(q.vars.k, 1.25) && sc[1] === 6 && sv.k === 1, 'sweep: playing sliders at centre + amplitude, inputs untouched');
+  ok(near(sweep([0.1], {}, [0], 1, 0.75).consts[0], -0.4) && near(at(0), 6) && near(at(74), 6), 'sweep: a small number still swings by up to 0.5; the loop closes');
+  ok([1, 7, 30, 50].every(i => near(at(i), at((111 - i) % 74))), 'sweep: frame i equals frame n/2 − i, which the GIF export reuses');
   let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   for (let i = 0; i < 25; i++) {
     const p = randomPiece(rnd), k = compile(p.src), m = p.src.match(/^([\d.]+)\w+\([^)]*\)\*([\d.]+)/);   // m: a·g1(…)*b·g2(…)
@@ -224,25 +239,29 @@ else ui();
 
 function ui() {
   // ---------- state: defaults ← localStorage ← URL hash, all in the one hash format ----------
-  const DEFAULTS = { src: STARTERS[0], gens: [1, 6], palette: 'Spectrum', lw: 1.5, R: 2, vars: {}, cap: true };
+  const DEFAULTS = { src: STARTERS[0], gens: [1, 6], palette: 'Spectrum', lw: 1.5, R: 2, vars: {}, cap: true, anim: [], sw: 0.1, dur: 3 };
   function decode(h) {                                    // the hash is untrusted input: whitelist and clamp everything
     const q = new URLSearchParams(h.replace(/\+/g, '%2B')), o = {};   // keep a hand-written '+' as plus, not space
     const num = (k, lo, hi) => { const v = +q.get(k); return q.has(k) && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : undefined; };
     if (q.has('f')) o.src = q.get('f').slice(0, 2000);   // the input caps typing at 200; Fix and negative drags grow the text
     if (q.has('g')) o.gens = [...new Set(q.get('g').match(/[1-7]/g) || [])].map(Number);
     if (Object.prototype.hasOwnProperty.call(PALETTES, q.get('p'))) o.palette = q.get('p');   // not Object.hasOwn: iOS 15.0–15.3 lacks it
-    const lw = num('lw', 0.5, 6), R = num('R', 0.5, 10);
-    if (lw != null) o.lw = lw; if (R != null) o.R = R;
+    const lw = num('lw', 0.5, 6), R = num('R', 0.5, 10), sw = num('sw', 0.01, 1), dur = num('t', 1, 6);
+    if (lw != null) o.lw = lw; if (R != null) o.R = R; if (sw != null) o.sw = sw; if (dur != null) o.dur = dur;
+    // playing sliders: constant indices and letters; always set, so a link without them stops what was stored. setFormula drops what the formula lacks
+    o.anim = [...new Set((q.get('a') || '').split(',').filter(k => /^(\d{1,2}|[a-zA-Z])$/.test(k)).map(k => isNaN(k) ? k : +k))];
     if (q.has('cap')) o.cap = q.get('cap') === '1';
     o.vars = {};
     for (const [k, v] of q) if (/^v\.[a-zA-Z]$/.test(k) && Number.isFinite(+v)) o.vars[k.slice(2)] = Math.min(5, Math.max(-5, +v));
     return o;
   }
   const encode = (src = S.okSrc ?? DEFAULTS.src) => '#' + [`f=${encodeURIComponent(src)}`, `g=${S.gens.join('')}`, `p=${S.palette}`, `lw=${S.lw}`, `R=${S.R}`,
-    `cap=${S.cap ? 1 : 0}`, ...Object.entries(S.vars).map(([k, v]) => `v.${k}=${fmt(v)}`)].join('&');
+    `cap=${S.cap ? 1 : 0}`, ...Object.entries(S.vars).map(([k, v]) => `v.${k}=${fmt(v)}`),
+    ...(S.anim.length ? [`a=${S.anim.join(',')}`, `sw=${S.sw}`, `t=${S.dur}`] : [])].join('&');
   let stored = ''; try { stored = localStorage.mathart || ''; } catch {}
   const S = { ...DEFAULTS, ...decode(stored.slice(1)), ...(location.hash.length > 1 ? decode(location.hash.slice(1)) : {}) };
   S.on = closure(S.gens);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) S.anim = [];   // nothing moves on its own; ▶ still works
   let hashTimer;
   function save() {
     try { localStorage.mathart = encode(); } catch {}
@@ -264,11 +283,12 @@ function ui() {
   const freeLetter = () => [...'cdpqrstuvw'].find(n => !(S.varNames || []).includes(n));
 
   // ---------- drawing ----------
-  function draw(ctx, W, H, lw, caption) {                 // returns the parity of f: 'even' | 'odd' | null
-    const { f, consts, vars, R } = S, N = 2000, m = Math.min(W, H), s = m / (2 * R), cx = W / 2, cy = H / 2;
+  function draw(ctx, W, H, lw, caption, at) {             // returns the parity of f: 'even' | 'odd' | null. at: one sweep() frame
+    const { f, R } = S, { consts, vars } = at ?? S, N = 2000, m = Math.min(W, H), s = m / (2 * R), cx = W / 2, cy = H / 2;
     ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, W, H);
     if (!f) return null;
-    const { xs, ys } = sample(f, consts, vars, R, N), parity = parityOf(ys, R), hide = new Set(dupsOf(parity));
+    // a moving frame draws every copy: hiding the coincident ones would flip colors as the sweep passes through a symmetric value
+    const { xs, ys } = sample(f, consts, vars, R, N), parity = at ? null : parityOf(ys, R), hide = new Set(dupsOf(parity));
     ctx.save(); ctx.beginPath(); ctx.rect(cx - m / 2, cy - m / 2, m, m); ctx.clip();   // the view is the centred square, so the screen matches the export
     ctx.lineWidth = lw; ctx.lineJoin = ctx.lineCap = 'round';
     const cols = colors();
@@ -302,8 +322,17 @@ function ui() {
   }
 
   const canvas = $('c'), ctx = canvas.getContext('2d');
-  let dpr = 1;
-  const render = () => showParity(draw(ctx, canvas.width, canvas.height, S.lw * dpr, false));
+  let dpr = 1, raf = 0, last = 0, phase = 0;
+  const frame = now => {                                  // live preview of the sweep; ends itself when nothing is playing
+    if (!S.anim.length || !S.f) { raf = 0; return render(); }
+    raf = requestAnimationFrame(frame);
+    phase += Math.min(now - last, 100) / 1000 / S.dur; last = now;   // accumulated, so a speed change doesn't jump; capped, so a hidden tab resumes where it paused
+    draw(ctx, canvas.width, canvas.height, S.lw * dpr, false, sweep(S.consts, S.vars, S.anim, S.sw, phase));
+  };
+  function render() {                                     // the still picture, which the next preview frame paints over while a sweep plays
+    showParity(draw(ctx, canvas.width, canvas.height, S.lw * dpr, false));
+    if (S.anim.length && S.f && !raf) { last = performance.now(); phase = 0; raf = requestAnimationFrame(frame); }
+  }
   new ResizeObserver(() => {
     dpr = devicePixelRatio || 1;
     canvas.width = Math.round(canvas.clientWidth * dpr); canvas.height = Math.round(canvas.clientHeight * dpr);
@@ -325,6 +354,8 @@ function ui() {
     S.src = src;
     try {
       const c = compile(src);
+      const same = !S.parts || S.parts.join('\0') === c.parts.join('\0');   // a different formula has new numbers: a playing index would point at the wrong one
+      S.anim = S.anim.filter(k => typeof k === 'number' ? same && k < c.consts.length : c.varNames.includes(k));
       Object.assign(S, { f: c.f, consts: c.consts, parts: c.parts, varNames: c.varNames, usesX: c.usesX, okSrc: src });
       S.vars = Object.fromEntries(c.varNames.map(n => [n, S.vars[n] ?? 1]));
       $('err').textContent = ''; buildSliders();
@@ -334,10 +365,13 @@ function ui() {
     save(); render();
   }
   function buildSliders() {
-    const slider = (label, aria, min, max, step, value, set) => {
+    const slider = (label, aria, min, max, step, value, set, key) => {
       const l = document.createElement('label'); l.className = 'row';
       l.innerHTML = `<output>${label(value)}</output><input type="range" aria-label="${aria}" min="${min}" max="${max}" step="${step}" value="${value}">`;
       l.querySelector('input').oninput = e => { set(+e.target.value); l.querySelector('output').value = label(+e.target.value); save(); render(); };
+      // ▶ sweeps this slider back and forth around where it stands; several play in step
+      const b = chip('', () => { S.anim = S.anim.includes(key) ? S.anim.filter(k => k !== key) : [...S.anim, key]; save(); paintAnim(); render(); });
+      b.k = key; b.setAttribute('aria-label', `Animate ${aria}`); l.append(b);
       return l;
     };
     $('consts').replaceChildren(
@@ -346,9 +380,14 @@ function ui() {
         return slider(fmt, `constant ${i + 1}`, -span, span, Math.abs(v) < 0.5 ? 0.001 : span / 200, v, w => {
           S.consts[i] = w; $('formula').value = S.src = S.okSrc = join(S.parts, S.consts);
           $('err').textContent = '';                      // the rewrite of the last good formula is valid, even if a typo was showing
-        });
+        }, i);
       }),
-      ...S.varNames.map(n => slider(w => `${n} = ${fmt(w)}`, n, -5, 5, 0.01, S.vars[n], w => { S.vars[n] = w; })));   // letters: named sliders, nothing to rewrite
+      ...S.varNames.map(n => slider(w => `${n} = ${fmt(w)}`, n, -5, 5, 0.01, S.vars[n], w => { S.vars[n] = w; }, n)));   // letters: named sliders, nothing to rewrite
+    paintAnim();
+  }
+  function paintAnim() {                                  // play toggles and the sweep controls follow S.anim
+    for (const b of $('consts').querySelectorAll('button')) { const on = S.anim.includes(b.k); b.textContent = on ? '■' : '▶︎'; b.setAttribute('aria-pressed', on); }
+    $('anim').hidden = !S.anim.length;
   }
   function setGens(gens) { S.gens = gens; S.on = closure(gens); save(); paintSym(); render(); }
   function paintSym() {                                   // preset + chip states and colors follow state, palette, theme
@@ -379,6 +418,8 @@ function ui() {
   $('lw').value = S.lw; $('lw').oninput = e => { S.lw = +e.target.value; save(); render(); };
   $('R').value = S.R; $('R').oninput = e => { S.R = +e.target.value; save(); render(); };   // the range is rtl in CSS, so right = zoom in
   $('cap').checked = S.cap; $('cap').onchange = e => { S.cap = e.target.checked; save(); };
+  $('sw').value = S.sw; $('sw').oninput = e => { S.sw = +e.target.value; save(); };       // the preview loop reads both live
+  $('dur').value = S.dur; $('dur').oninput = e => { S.dur = +e.target.value; save(); };   // seconds per loop; rtl in CSS, so right = faster
   const setTheme = t => { document.documentElement.dataset.theme = t; paintSym(); render(); };
   const sysDark = matchMedia('(prefers-color-scheme: dark)');
   $('theme').onclick = () => {
@@ -419,23 +460,48 @@ function ui() {
       else { await navigator.clipboard.writeText(`${text} ${url}`); flash($('share'), 'Copied link', 'Share'); }
     } catch {}                                            // includes the user dismissing the sheet
   };
-  $('save').onclick = async () => {
-    const c = exportCanvas();
-    if (!call) return c.toBlob(b => {                     // browser: download
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(b), download: `${APP}.png` });
+  async function store(blob, ext) {                       // a PNG or GIF: in a browser a download, in the app the photo library
+    if (!call) {
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${APP}.${ext}` });
       a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    });
-    try {                                                 // iOS: add-only photo permission, no album. Android: the app's own album, no permission prompt
-      let albumIdentifier;
-      if (window.Capacitor.getPlatform() === 'android') {
-        const find = async () => (await call('Media', 'getAlbums')).albums.find(a => a.name === APP)?.identifier;
-        albumIdentifier = (await find()) ?? (await call('Media', 'createAlbum', { name: APP }), await find());
-      }
-      await call('Media', 'savePhoto', { path: c.toDataURL('image/png'), albumIdentifier, fileName: `${APP}-${Date.now()}` });
-      flash($('save'), 'Saved', 'Save PNG');
-    } catch (e) {                                         // denied once, iOS never asks again
-      if (e?.code === 'accessDenied') flash($('save'), 'Allow in Settings', 'Save PNG', 4000); else flash($('save'), 'Not saved', 'Save PNG');
+      return;
     }
+    let albumIdentifier;                                  // iOS: add-only photo permission, no album. Android: the app's own album, no permission prompt
+    if (window.Capacitor.getPlatform() === 'android') {
+      const find = async () => (await call('Media', 'getAlbums')).albums.find(a => a.name === APP)?.identifier;
+      albumIdentifier = (await find()) ?? (await call('Media', 'createAlbum', { name: APP }), await find());
+    }
+    const path = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(blob); });
+    await call('Media', 'savePhoto', { path, albumIdentifier, fileName: `${APP}-${Date.now()}` });   // the bytes are stored as they are, so a GIF stays animated
+  }
+  const unsaved = (b, e, back) => e?.code === 'accessDenied' ? flash(b, 'Allow in Settings', back, 4000) : flash(b, 'Not saved', back);   // denied once, iOS never asks again
+  $('save').onclick = async () => {
+    try {
+      await store(await new Promise(r => exportCanvas().toBlob(r)), 'png');
+      if (call) flash($('save'), 'Saved', 'Save PNG');
+    } catch (e) { unsaved($('save'), e, 'Save PNG'); }
+  };
+  $('gif').onclick = async () => {                        // one loop of the sweep: 600 px, 25 fps, 32 colors, about 2 MB for 3 s
+    const b = $('gif'), size = 600, n = 2 * Math.round(S.dur * 12.5);
+    if (document.body.inert) return;                      // already rendering; where inert is unsupported (iOS < 15.5) the page stays tappable
+    document.body.inert = true;                           // the frames read live state: nothing changes under them
+    try {
+      const { GIFEncoder, quantize, applyPalette } = await import('./gifenc.js');   // fetched on first use
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const g = c.getContext('2d', { willReadFrequently: true }), lw = S.lw * size / Math.min(canvas.clientWidth, canvas.clientHeight);
+      const shot = t => { draw(g, size, size, lw, S.cap, sweep(S.consts, S.vars, S.anim, S.sw, t)); return g.getImageData(0, 0, size, size).data; };
+      const ends = new Uint8ClampedArray(size * size * 8); ends.set(shot(0.25)); ends.set(shot(0.75), size * size * 4);
+      const palette = quantize(ends, 32), gif = GIFEncoder(), done = [];   // from both extremes: at the centre, coincident copies can hide a color
+      for (let i = 0; i < n; i++) {
+        const j = Math.min(i, (n * 1.5 - i) % n);         // sin takes each value twice a loop: frame i equals frame n/2 − i
+        if (!done[j]) { done[j] = applyPalette(shot(j / n), palette); b.textContent = `${Math.round(100 * i / n)}%`; await new Promise(r => setTimeout(r)); }
+        gif.writeFrame(done[j], size, size, { palette: i ? undefined : palette, delay: 40 });
+      }
+      gif.finish();
+      await store(new Blob([gif.bytes()], { type: 'image/gif' }), 'gif');
+      flash(b, 'Saved', 'Save GIF');
+    } catch (e) { unsaved(b, e, 'Save GIF'); }
+    document.body.inert = false;
   };
 
   paintSym(); setFormula(S.src);
